@@ -74,16 +74,16 @@
     }
     cropViewController.allowedAspectRatios = allowedAspectRatios;
 
-    [self setupUiCustomizedOptions:call.arguments
-                 forViewController:cropViewController];
-
     if (ratioX != (id)[NSNull null] && ratioY != (id)[NSNull null]) {
       cropViewController.aspectRatioPreset = CGSizeMake([ratioX floatValue], [ratioY floatValue]);
       cropViewController.resetAspectRatioEnabled = NO;
       cropViewController.aspectRatioPickerButtonHidden = YES;
-      cropViewController.aspectRatioLockDimensionSwapEnabled = YES;
+      cropViewController.aspectRatioLockDimensionSwapEnabled = NO;
       cropViewController.aspectRatioLockEnabled = YES;
     }
+
+    [self setupUiCustomizedOptions:call.arguments
+                 forViewController:cropViewController];
 
     // Find key window (camera is presented here) and Flutter window (cropper must be presented here).
     // In UISceneDelegate apps (Flutter default on iOS 13+), these are two separate windows:
