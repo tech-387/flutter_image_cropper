@@ -85,6 +85,11 @@
     [self setupUiCustomizedOptions:call.arguments
                  forViewController:cropViewController];
 
+    if (cropViewController.cropView.aspectRatioLockEnabled &&
+        !cropViewController.cropView.aspectRatioLockDimensionSwapEnabled) {
+      [self resetCropOnRotationForViewController:cropViewController];
+    }
+
     // Find key window (camera is presented here) and Flutter window (cropper must be presented here).
     // In UISceneDelegate apps (Flutter default on iOS 13+), these are two separate windows:
     // - keyWindow: plain UIViewController root, used by iOS for system presentations like camera
@@ -248,6 +253,69 @@
   if (cancelButtonTitle && [cancelButtonTitle isKindOfClass:[NSString class]]) {
     controller.cancelButtonTitle = cancelButtonTitle;
   }
+}
+
+// When a locked aspect ratio can't swap dimensions, TOCropView rotates the crop
+// box with the image and then shrinks it back to the locked ratio without
+// zooming out, so every rotation zooms in further. Reset the crop after each
+// rotation to how the cropper opens instead: the largest crop of the locked
+// ratio, centered in the rotated image.
+- (void)resetCropOnRotationForViewController:(TOCropViewController *)controller {
+  // The toolbar actions are assigned in viewDidLoad, so load the view before replacing them.
+  [controller loadViewIfNeeded];
+  __weak TOCropViewController *weakController = controller;
+  controller.toolbar.rotateClockwiseButtonTapped = ^{
+    [self rotateResettingCrop:weakController clockwise:YES];
+  };
+  controller.toolbar.rotateCounterclockwiseButtonTapped = ^{
+    [self rotateResettingCrop:weakController clockwise:NO];
+  };
+}
+
+- (void)rotateResettingCrop:(TOCropViewController *)controller clockwise:(BOOL)clockwise {
+  if (!controller) {
+    return;
+  }
+  TOCropView *cropView = controller.cropView;
+
+  controller.toolbar.disableRotationButtons = YES;
+  [cropView rotateImageNinetyDegreesAnimated:YES
+                                   clockwise:clockwise
+                                  completion:^(BOOL completed) {
+    // TOCropView has just snapped the crop box back to the locked ratio, so the
+    // scroll view's minimum zoom now allows zooming out to the largest crop.
+    CGSize imageSize = cropView.image.size;
+    if (labs(cropView.angle) % 180 == 90) {
+      imageSize = CGSizeMake(imageSize.height, imageSize.width);
+    }
+    CGSize cropSize = [self largestCropSizeForAspectRatio:cropView.aspectRatio
+                                                imageSize:imageSize];
+    CGRect cropFrame = CGRectMake((imageSize.width - cropSize.width) * 0.5f,
+                                  (imageSize.height - cropSize.height) * 0.5f,
+                                  cropSize.width, cropSize.height);
+
+    [UIView animateWithDuration:0.5f
+                          delay:0.0f
+         usingSpringWithDamping:1.0f
+          initialSpringVelocity:0.7f
+                        options:UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{
+      cropView.imageCropFrame = cropFrame;
+    }
+                     completion:^(BOOL finished) {
+      controller.toolbar.disableRotationButtons = NO;
+    }];
+  }];
+}
+
+// Largest size of the given aspect ratio that fits the image. A zero aspect
+// ratio means the image's own, as in TOCropView.
+- (CGSize)largestCropSizeForAspectRatio:(CGSize)aspectRatio imageSize:(CGSize)imageSize {
+  if (aspectRatio.width < FLT_EPSILON || aspectRatio.height < FLT_EPSILON) {
+    return imageSize;
+  }
+  CGFloat scale = MIN(imageSize.width / aspectRatio.width, imageSize.height / aspectRatio.height);
+  return CGSizeMake(aspectRatio.width * scale, aspectRatio.height * scale);
 }
 
 - (TOCropViewControllerAspectRatioPreset*)parseAspectRatioPresetFromDict:(NSDictionary *)dict {
